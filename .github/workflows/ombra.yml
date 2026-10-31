@@ -1,0 +1,41 @@
+# Va salvato nel repository come:  .github/workflows/build.yml
+#
+# Compila la mod L'Ombra su GitHub (gratis) e ti lascia il .jar da scaricare.
+# Non serve il "gradle wrapper": Gradle e Java li installa il workflow da solo.
+
+name: Build mod
+
+on:
+  push:                # parte da solo a ogni caricamento di file
+  workflow_dispatch:   # e ha il pulsante "Run workflow" nella scheda Actions
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v4
+
+      - name: Installa Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Installa Gradle 8.1.1
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.1.1
+
+      - name: Compila la mod
+        run: gradle build --no-daemon
+
+      - name: Salva il .jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ombra-mod
+          path: build/libs/*.jar
+          if-no-files-found: error
