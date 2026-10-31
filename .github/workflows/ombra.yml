@@ -22,10 +22,14 @@ jobs:
       - name: Trova la mod e prepara Gradle
         id: prep
         run: |
+          if [ -z "$(find . -type d -path '*/src/main/java' -not -path './.git/*' | head -n 1)" ]; then
+            echo "Nessuna cartella src trovata: provo a estrarre gli zip caricati"
+            find . -name '*.zip' -not -path './.git/*' | while read -r Z; do unzip -oq "$Z" -d _estratto; done
+          fi
           SRC=$(find . -type d -path '*/src/main/java' -not -path './.git/*' | head -n 1)
           if [ -z "$SRC" ]; then
-            echo "::error::Non trovo src/main/java: carica nel repository la cartella src della mod"
-            ls -aR | head -60
+            echo "::error::Non trovo src/main/java: carica nel repository la cartella src della mod (o lo zip)"
+            ls -a
             exit 1
           fi
           DIR=$(dirname "$(dirname "$(dirname "$SRC")")")
@@ -66,7 +70,22 @@ jobs:
 
       - name: Compila la mod
         working-directory: ${{ steps.prep.outputs.dir }}
-        run: gradle build --no-daemon
+        run: |
+          set -o pipefail
+          gradle build --no-daemon 2>&1 | tee build.log
+
+      - name: Riassunto errori
+        if: failure()
+        working-directory: ${{ steps.prep.outputs.dir }}
+        run: |
+          {
+            echo '### Errori di compilazione (copia da qui e mandameli)'
+            echo '```'
+            OUT=$(grep -E -A4 'error:|What went wrong' build.log | head -200 || true)
+            if [ -z "$OUT" ]; then OUT=$(tail -80 build.log); fi
+            echo "$OUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Salva il .jar
         uses: actions/upload-artifact@v4
