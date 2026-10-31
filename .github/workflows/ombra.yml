@@ -1,41 +1,76 @@
-# Va salvato nel repository come:  .github/workflows/build.yml
-#
-# Compila la mod L'Ombra su GitHub (gratis) e ti lascia il .jar da scaricare.
-# Non serve il "gradle wrapper": Gradle e Java li installa il workflow da solo.
-
 name: Build mod
 
 on:
-  push:                # parte da solo a ogni caricamento di file
-  workflow_dispatch:   # e ha il pulsante "Run workflow" nella scheda Actions
-
-permissions:
-  contents: read
+  push:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Scarica il codice
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Installa Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Installa Gradle 8.1.1
-        uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.1.1
 
+      - name: Trova la mod e prepara Gradle
+        id: prep
+        run: |
+          SRC=$(find . -type d -path '*/src/main/java' -not -path './.git/*' | head -n 1)
+          if [ -z "$SRC" ]; then
+            echo "::error::Non trovo src/main/java: carica nel repository la cartella src della mod"
+            ls -aR | head -60
+            exit 1
+          fi
+          DIR=$(dirname "$(dirname "$(dirname "$SRC")")")
+          echo "Mod trovata in: $DIR"
+          cd "$DIR"
+          [ -f settings.gradle ] || cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  gradlePluginPortal()
+                  maven { url = 'https://maven.minecraftforge.net/' }
+              }
+          }
+          EOF
+          [ -f gradle.properties ] || cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx3G
+          minecraft_version=1.20.1
+          forge_version=47.2.0
+          mapping_channel=official
+          mapping_version=1.20.1
+          mod_id=ombra
+          mod_version=1.0.0
+          mod_group_id=com.gamernoob.ombra
+          EOF
+          [ -f build.gradle ] || cat > build.gradle <<'EOF'
+          plugins {
+              id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+          }
+          version = mod_version
+          group = mod_group_id
+          base { archivesName = mod_id }
+          java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+          minecraft { mappings channel: mapping_channel, version: mapping_version }
+          dependencies { minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}" }
+          tasks.named('jar', Jar).configure { finalizedBy 'reobfJar' }
+          tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+          EOF
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
       - name: Compila la mod
+        working-directory: ${{ steps.prep.outputs.dir }}
         run: gradle build --no-daemon
 
       - name: Salva il .jar
         uses: actions/upload-artifact@v4
         with:
           name: ombra-mod
-          path: build/libs/*.jar
+          path: ${{ steps.prep.outputs.dir }}/build/libs/*.jar
           if-no-files-found: error
